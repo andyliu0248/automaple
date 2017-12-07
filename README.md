@@ -20,7 +20,7 @@ Grandiest goals:
 - Intercept game packets so that no need to get vision working.
 
 To-dos:
-- (Check √) Complete image layer for screen capturing/pixel accessing in macOS. Thanks SO!
+- (Check √) Complete image layer for screen capturing/pixel accessing in macOS. Thanks StackOverflow! Refer to: http://neverfear.org/blog/view/156/OS_X_Screen_capture_from_Python_PyObjC
 - Design a character info layer to read character info (max HP/MP, pot rate and keys, attack skill keys and delays, etc) from a text file.
 - Design a character control layer to do the grinding. Perhaps on the highest level will use a subsumption architecture. Behaviors and their relative hierarchy: recast skill -> loot -> npc -> switch platform -> grind. Lower level need not use the same architecture.
 - Design a map-info layer that stores (or reads from a file?) the geography of the current map. If possible can also let the game bot to explore the map and figure out the geography by itself, but seems pretty hard given my current knowledge. Four types of geography: floor, slope, rope, and door. A grinding- and moving-style is associated with each instance of geography. Each instance also records the pixel range in the mini map, so can know the current position of the player.
