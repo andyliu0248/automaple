@@ -1,9 +1,10 @@
 import time
 import struct
 
-from scipy.misc import toimage, imsave
-
+#from scipy.misc import toimage, imsave
+from PIL import Image
 import numpy
+
 import Quartz.CoreGraphics as CG
 
 
@@ -61,8 +62,8 @@ class ScreenPixel(object):
 
     def to_image(self):
         im = Image.fromarray(self.array.astype('uint8'), 'RGB')
-        current_time = time.strftime("%Y-%m%d-%H%M%S")
-        im.save(current_time + ".png")
+        current_time = time.strftime("%Y_%m%d_%H%M%S")
+        im.save(current_time + " %dx%d.png" % (self.width, self.height))
         #im.show()
 
     def capture_and_save(self, region=None):
