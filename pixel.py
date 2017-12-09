@@ -13,7 +13,7 @@ class ScreenPixel(object):
     the pixel values.
     """
 
-    def capture(self, region = None):
+    def capture(self, rect = None):
         """region should be a CGRect, something like:
 
         >>> import Quartz.CoreGraphics as CG
@@ -24,10 +24,10 @@ class ScreenPixel(object):
         The default region is CG.CGRectInfinite (captures the full screen)
         """
 
-        if region is None:
+        if rect is None:
             region = CG.CGRectInfinite
         else:
-            #region = CG.CGRectMake(rect.x0, rect.y0, rect.width, rect.height)
+            region = CG.CGRectMake(rect.x0, rect.y0, rect.width, rect.height)
             # TODO: Odd widths cause the image to warp. This is likely
             # caused by offset calculation in ScreenPixel.query_pixel, and
             # could could modified to allow odd-widths
@@ -61,10 +61,14 @@ class ScreenPixel(object):
         self.array = numpy.array(arr)
 
     def to_image(self):
+        try:
+            self.array
+        except AttributeError:
+            self.get_array()
         im = Image.fromarray(self.array.astype('uint8'), 'RGB')
         current_time = time.strftime("%Y_%m%d_%H%M%S")
         im.save(current_time + " %dx%d.png" % (self.width, self.height))
-        #im.show()
+        im.show()
 
     def capture_and_save(self, region=None):
         self.capture(region)
@@ -98,18 +102,19 @@ class ScreenPixel(object):
 
 class ScreenPixelManager(object):
     capture_list = list()
-    rect = None
 
     def set_default_rect(rect):
-        ScreenPixelManager.rect = rect
+        minimum_width = (int((rect.x1 - rect.x0)/400) + 1) * 400
+        # minimum_width = (int((x1 - x0)/400) + 1) * 400
+        ScreenPixelManager.rect = Rect(rect.x0, 0, rect.x0 + minimum_width, rect.y1)
+        ScreenPixelManager.original_rect = rect
 
     def pop_sp():
         if len(ScreenPixelManager.capture_list) == 0:
             raise ValueError("No screen capture yet.")
         return ScreenPixelManager.capture_list[-1]
 
-
-    def new_capture(rect=None):
+    def new_capture(rect=None, save_image=False):
         new_sp = ScreenPixel()
         if rect is None:
             try:
@@ -118,6 +123,8 @@ class ScreenPixelManager(object):
                 rect = Rect(0, 0, 1440, 900)
         new_sp.capture(rect)
         ScreenPixelManager.capture_list.append(new_sp)
+        if save_image:
+            new_sp.to_image()
 
     def get_pixel(x, y, new=False, alpha=False):
         if new or len(ScreenPixelManager.capture_list) == 0:
@@ -126,11 +133,26 @@ class ScreenPixelManager(object):
         return last_capture.query_pixel(x, y, alpha)
 
     def find_pixel(r, g, b, new=False):
+        assert not len(ScreenPixelManager.capture_list) == 0
         if new: ScreenPixelManager.new_capture()
         last_sp = ScreenPixelManager.pop_sp()
-        for i in range(last_sp.width):
-            for j in range(last_sp.height):
+        range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
+        range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
+        for i in range(range_x[0], range_x[1]):
+            for j in range(range_y[0], range_y[1]):
                 if ScreenPixelManager.get_pixel(i,j) == (r,g,b):
+                    return (i,j)
+        raise ValueError("Pixel not found.")
+
+    def find_pixel_customize(criterion, new=False):
+        assert not len(ScreenPixelManager.capture_list) == 0
+        if new: ScreenPixelManager.new_capture()
+        last_sp = ScreenPixelManager.pop_sp()
+        range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
+        range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
+        for i in range(range_x[0], range_x[1]):
+            for j in range(range_y[0], range_y[1]):
+                if criterion(last_sp, i, j):
                     return (i,j)
         raise ValueError("Pixel not found.")
 
@@ -167,42 +189,36 @@ if __name__ == '__main__':
 
     # Example usage
     sp = ScreenPixel()
-    sp.capture()
-    sp.get_array()
-    sp.to_image()
 
     with timer("Capture"):
         # Take screenshot (takes about 70ms for me)
-        rect = Rect(0, 0, 800, 622)
-        sp.capture(rect)
+        sp.capture()
 
     with timer("Query"):
         # Get pixel value (takes about 0.01ms)
         print(sp.width, sp.height)
         print(sp.query_pixel(0, 0))
 
-    with timer("Ask manager for a new capture"):
-        ScreenPixelManager.new_capture(rect)
-
-    with timer("Ask manager for an old pixel"):
-        ScreenPixelManager.get_pixel(0, 22)
-
-    with timer("Set default rect to something"):
-        ScreenPixelManager.set_default_rect(rect)
-
-    with timer("Get pixel at (45, 145)"):
-        print(ScreenPixelManager.get_pixel(45, 145))
-
-    with timer("Get new pixel at (45, 145)"):
-        print(ScreenPixelManager.get_pixel(45, 145, new=True))
-
+    with timer("Capture a small region"):
+        ScreenPixelManager.set_default_rect(Rect(0, 93, 138, 178))
+        print(ScreenPixelManager.get_pixel(45, 142, new=True))
 
     with timer("Search for a pixel"):
-        ScreenPixelManager.set_default_rect(Rect(0, 0, 138, 178))
-        print(ScreenPixelManager.get_pixel(45, 145, new=True))
+        print(ScreenPixelManager.find_pixel(255, 255, 136, new=False))
 
-    rect_2 = Rect(0, 0, 1000, 1000)
+    with timer("Advance search for a pixel"):
+        def is_player(sp, i, j):
+            player_rgp = (255, 255, 136)
+            try:
+                return sp.query_pixel(i, j) == player_rgp and \
+            sp.query_pixel(i+1, j+1) == player_rgp
+            except IndexError:
+                return False
+        print(ScreenPixelManager.find_pixel_customize(is_player, new=False))
 
-    with timer("Search for a pixel"):
-        ScreenPixelManager.set_default_rect(rect_2)
-        print(ScreenPixelManager.get_pixel(45, 145, new=True))
+    attempts = 100
+    for i in range(attempts):
+        with timer("Search for player for 10 times"):
+            pos = ScreenPixelManager.find_pixel_customize(is_player, new=True)
+        print(pos)
+        time.sleep(0.3)
