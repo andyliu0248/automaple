@@ -127,14 +127,17 @@ class ScreenPixelManager(object):
             new_sp.to_image()
 
     def get_pixel(x, y, new=False, alpha=False):
-        if new or len(ScreenPixelManager.capture_list) == 0:
-            ScreenPixelManager.new_capture()
-        last_capture = ScreenPixelManager.pop_sp()
-        return last_capture.query_pixel(x, y, alpha)
+        try:
+            if new: ScreenPixelManager.new_capture()
+            last_capture = ScreenPixelManager.pop_sp()
+            return last_capture.query_pixel(x, y, alpha)
+        except ValueError:
+            raise ValueError("No screen capture yet.")
+
 
     def find_pixel(r, g, b, new=False):
-        assert not len(ScreenPixelManager.capture_list) == 0
         if new: ScreenPixelManager.new_capture()
+        assert not len(ScreenPixelManager.capture_list) == 0
         last_sp = ScreenPixelManager.pop_sp()
         range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
         range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
@@ -145,14 +148,14 @@ class ScreenPixelManager(object):
         raise ValueError("Pixel not found.")
 
     def find_pixel_customize(criterion, new=False):
-        assert not len(ScreenPixelManager.capture_list) == 0
         if new: ScreenPixelManager.new_capture()
+        assert not len(ScreenPixelManager.capture_list) == 0
         last_sp = ScreenPixelManager.pop_sp()
         range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
         range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
         for i in range(range_x[0], range_x[1]):
             for j in range(range_y[0], range_y[1]):
-                if criterion(last_sp, i, j):
+                if criterion(i, j):
                     return (i,j)
         raise ValueError("Pixel not found.")
 
@@ -207,18 +210,13 @@ if __name__ == '__main__':
         print(ScreenPixelManager.find_pixel(255, 255, 136, new=False))
 
     with timer("Advance search for a pixel"):
-        def is_player(sp, i, j):
+        def is_player(i, j):
             player_rgp = (255, 255, 136)
             try:
-                return sp.query_pixel(i, j) == player_rgp and \
-            sp.query_pixel(i+1, j+1) == player_rgp
+                return ScreenPixelManager.get_pixel(i, j) == player_rgp and \
+            ScreenPixelManager.get_pixel(i+1, j+1) == player_rgp
             except IndexError:
                 return False
         print(ScreenPixelManager.find_pixel_customize(is_player, new=False))
 
-    attempts = 100
-    for i in range(attempts):
-        with timer("Search for player for 10 times"):
-            pos = ScreenPixelManager.find_pixel_customize(is_player, new=True)
-        print(pos)
-        time.sleep(0.3)
+        #(10, 116) (130, 154)
