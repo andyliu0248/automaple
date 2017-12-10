@@ -26,15 +26,34 @@ class ScreenPixel(object):
 
         if rect is None:
             region = CG.CGRectInfinite
+            self.rect = Rect(0, 0, 1440, 900)
+            self.original_rect = self.rect
         else:
-            region = CG.CGRectMake(rect.x0, rect.y0, rect.width, rect.height)
+            # TODO: Widths that are not multiples of 400 cause the image
+            # to warp. This is likely caused by offset calculation
+            # in ScreenPixel.pixel, and could could modified to
+            # arbitrary widths
+
+            self.original_rect = rect
+            minimum_width = (int((rect.x1 - rect.x0)/400) + 1) * 400
+
+            # TODO: The y-coord in the top-left corner must not be offset,
+            # or else the struct throws an error.
+            # This is likely caused by offset calculation.
+
+            self.rect = Rect(rect.x0, 0, rect.x0 + minimum_width, rect.y1)
+            region = self.rect.make_GC_Rect()
+
+
             # TODO: Odd widths cause the image to warp. This is likely
-            # caused by offset calculation in ScreenPixel.query_pixel, and
+            # caused by offset calculation in ScreenPixel.pixel, and
             # could could modified to allow odd-widths
+
             if region.size.width % 2 > 0:
                 emsg = "Capture region width should be even (was %s)" % (
                     region.size.width)
                 raise ValueError(emsg)
+
 
         # Create screenshot as CGImage
         image = CG.CGWindowListCreateImage(
@@ -57,10 +76,10 @@ class ScreenPixel(object):
         self.stamp = time.time()
 
     def get_array(self):
-        arr = [[self.query_pixel(i,j) for i in range(self.width)] for j in range(self.height)]
+        arr = [[self.pixel(i,j) for i in range(self.width)] for j in range(self.height)]
         self.array = numpy.array(arr)
 
-    def to_image(self):
+    def save_image(self):
         try:
             self.array
         except AttributeError:
@@ -68,20 +87,14 @@ class ScreenPixel(object):
         im = Image.fromarray(self.array.astype('uint8'), 'RGB')
         current_time = time.strftime("%Y_%m%d_%H%M%S")
         im.save(current_time + " %dx%d.png" % (self.width, self.height))
-        im.show()
 
-    def capture_and_save(self, region=None):
-        self.capture(region)
-        self.get_array()
-        self.to_image()
-
-    def query_pixel(self, x, y, alpha=False):
+    def pixel(self, x, y, alpha=False, new=False, rect=None):
         """Get pixel value at given (x,y) screen coordinates
 
         Must call capture first.
         """
 
-        #print(self.width, self.height)
+        if new: self.capture(rect)
 
         # Pixel data is unsigned char (8bit unsigned integer),
         # and there are for (blue,green,red,alpha)
@@ -100,59 +113,20 @@ class ScreenPixel(object):
         else:
             return (r, g, b)
 
-class ScreenPixelManager(object):
-    capture_list = list()
-
-    def set_default_rect(rect):
-        minimum_width = (int((rect.x1 - rect.x0)/400) + 1) * 400
-        # minimum_width = (int((x1 - x0)/400) + 1) * 400
-        ScreenPixelManager.rect = Rect(rect.x0, 0, rect.x0 + minimum_width, rect.y1)
-        ScreenPixelManager.original_rect = rect
-
-    def pop_sp():
-        if len(ScreenPixelManager.capture_list) == 0:
-            raise ValueError("No screen capture yet.")
-        return ScreenPixelManager.capture_list[-1]
-
-    def new_capture(rect=None, save_image=False):
-        new_sp = ScreenPixel()
-        if rect is None:
-            try:
-                rect = ScreenPixelManager.rect
-            except AttributeError:
-                rect = Rect(0, 0, 1440, 900)
-        new_sp.capture(rect)
-        ScreenPixelManager.capture_list.append(new_sp)
-        if save_image:
-            new_sp.to_image()
-
-    def get_pixel(x, y, new=False, alpha=False):
-        try:
-            if new: ScreenPixelManager.new_capture()
-            last_capture = ScreenPixelManager.pop_sp()
-            return last_capture.query_pixel(x, y, alpha)
-        except ValueError:
-            raise ValueError("No screen capture yet.")
-
-
-    def find_pixel(r, g, b, new=False):
-        if new: ScreenPixelManager.new_capture()
-        assert not len(ScreenPixelManager.capture_list) == 0
-        last_sp = ScreenPixelManager.pop_sp()
-        range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
-        range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
+    def find_pixel(self, r, g, b, new=False, rect=None):
+        if new: self.capture(rect)
+        range_x = (self.original_rect.x0, self.original_rect.x1)
+        range_y = (self.original_rect.y0, self.original_rect.y1)
         for i in range(range_x[0], range_x[1]):
             for j in range(range_y[0], range_y[1]):
-                if ScreenPixelManager.get_pixel(i,j) == (r,g,b):
+                if self.pixel(i,j) == (r,g,b):
                     return (i,j)
         raise ValueError("Pixel not found.")
 
-    def find_pixel_customize(criterion, new=False):
-        if new: ScreenPixelManager.new_capture()
-        assert not len(ScreenPixelManager.capture_list) == 0
-        last_sp = ScreenPixelManager.pop_sp()
-        range_x = (ScreenPixelManager.original_rect.x0, ScreenPixelManager.original_rect.x1)
-        range_y = (ScreenPixelManager.original_rect.y0, ScreenPixelManager.original_rect.y1)
+    def find_pixel_customize(self, criterion, new=False, rect=None):
+        if new: self.capture(rect)
+        range_x = (self.original_rect.x0, self.original_rect.x1)
+        range_y = (self.original_rect.y0, self.original_rect.y1)
         for i in range(range_x[0], range_x[1]):
             for j in range(range_y[0], range_y[1]):
                 if criterion(i, j):
@@ -177,6 +151,8 @@ class Rect(object):
     def bot_left(self):
         return self.x1, self.y1
 
+    def make_GC_Rect(self):
+        return CG.CGRectMake(self.x0, self.y0, self.width, self.height)
 
 if __name__ == '__main__':
     # Timer helper-function
@@ -200,23 +176,22 @@ if __name__ == '__main__':
     with timer("Query"):
         # Get pixel value (takes about 0.01ms)
         print(sp.width, sp.height)
-        print(sp.query_pixel(0, 0))
+        print(sp.pixel(0, 0))
 
-    with timer("Capture a small region"):
-        ScreenPixelManager.set_default_rect(Rect(0, 93, 138, 178))
-        print(ScreenPixelManager.get_pixel(45, 142, new=True))
+    with timer("Capture a small region and get a pixel"):
+        print(sp.pixel(45, 142, new=True, rect=Rect(0, 93, 138, 178)))
 
     with timer("Search for a pixel"):
-        print(ScreenPixelManager.find_pixel(255, 255, 136, new=False))
+        print(sp.find_pixel(255, 255, 136))
 
     with timer("Advance search for a pixel"):
         def is_player(i, j):
             player_rgp = (255, 255, 136)
             try:
-                return ScreenPixelManager.get_pixel(i, j) == player_rgp and \
-            ScreenPixelManager.get_pixel(i+1, j+1) == player_rgp
+                return sp.pixel(i, j) == player_rgp and \
+            sp.pixel(i+1, j+1) == player_rgp
             except IndexError:
                 return False
-        print(ScreenPixelManager.find_pixel_customize(is_player, new=False))
+        print(sp.find_pixel_customize(is_player, new=False))
 
         #(10, 116) (130, 154)
